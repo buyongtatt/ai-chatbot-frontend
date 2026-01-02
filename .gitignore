@@ -1,0 +1,31 @@
+# Node modules
+/node_modules
+
+# Production build output (e.g., from `npm run build` or `vite build`)
+/dist
+/build
+
+# Local environment variables
+.env.local
+.env.*.local
+.env
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS-specific files
+.DS_Store
+Thumbs.db

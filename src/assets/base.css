@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Your custom radiant tokens */
+:root {
+  --color-surface: #ffffff;
+  --color-text: #0f172a;
+  --color-border: #e5e7eb;
+  --color-primary: #2563eb;
+  --color-muted: #f8fafc;
+  --color-accent: #22c55e;
+}
+
+html.dark {
+  --color-surface: #0b1220;
+  --color-text: #e5e7eb;
+  --color-border: #374151;
+  --color-primary: #60a5fa;
+  --color-muted: #111827;
+  --color-accent: #34d399;
+}
+
+html {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}
