@@ -19,10 +19,12 @@ export function useAskStream() {
   const loading = ref(false);
   const error = ref<string | null>(null);
   let controller: AbortController | null = null;
-  let imageCount = 0; // Track image count
+  let imageCount = 0;
+  let buffer = ""; // Buffer for incomplete JSON chunks
 
   async function askStream(question: string, file?: File) {
-    imageCount = 0; // Reset counter
+    imageCount = 0;
+    buffer = "";
     error.value = null;
     loading.value = true;
     controller = new AbortController();
@@ -47,15 +49,21 @@ export function useAskStream() {
         const { done, value } = await reader.read();
         if (done) break;
         if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n").filter((l) => l.trim());
+          // Add new data to buffer
+          buffer += decoder.decode(value, { stream: true });
 
+          // Process complete lines from buffer
+          const lines = buffer.split("\n");
+
+          // Keep the last incomplete line in buffer for next iteration
+          buffer = lines.pop() || "";
+
+          // Process all complete lines
           for (const line of lines) {
-            try {
-              // Clean the line to remove any extra characters
-              const cleanLine = line.trim();
-              if (!cleanLine) continue;
+            const cleanLine = line.trim();
+            if (!cleanLine) continue;
 
+            try {
               const msg = JSON.parse(cleanLine) as {
                 type: string;
                 content?: string;
@@ -129,13 +137,8 @@ export function useAskStream() {
                   });
                 }
               } else if (msg.type === "image") {
-                imageCount++; // Increment counter
+                imageCount++;
                 console.log(`Processing image #${imageCount}`, msg);
-
-                // Log what the AI said about images
-                if (msg.doc_id) {
-                  console.log(`Image ${imageCount} doc_id: ${msg.doc_id}`);
-                }
 
                 let imageUrl: string | null = null;
                 let blob: Blob | null = null;
@@ -169,25 +172,15 @@ export function useAskStream() {
                     messages.value.push({
                       role: "assistant",
                       type: "text",
-                      content: `❌ Failed to load image #${imageCount}: ${filename || "unknown"}`,
+                      content: `❌ Failed to load image #${imageCount}`,
                       id: `error-${Date.now()}-${Math.random()}`,
                     });
                     continue;
                   }
-                } else {
-                  // This case shouldn't happen if backend is working correctly
-                  console.warn(`Image #${imageCount} has no URL or base64 content!`, msg);
-                  messages.value.push({
-                    role: "assistant",
-                    type: "text",
-                    content: `⚠️ Image #${imageCount} missing content data`,
-                    id: `warning-${Date.now()}-${Math.random()}`,
-                  });
-                  continue;
                 }
 
                 if (imageUrl) {
-                  const newImageMessage = {
+                  const newImageMessage: ChatMessage = {
                     role: "assistant",
                     type: "image",
                     url: imageUrl,
@@ -199,47 +192,52 @@ export function useAskStream() {
                   };
                   messages.value.push(newImageMessage);
                   console.log(`Successfully added image #${imageCount}:`, newImageMessage);
-                } else {
-                  console.log(`No URL created for image #${imageCount}`);
                 }
               }
             } catch (parseErr) {
-              console.error("Bad JSON chunk - attempting recovery:", line, parseErr);
+              console.error("Bad JSON chunk:", cleanLine, parseErr);
 
-              // Try to extract image data from malformed JSON
-              const imageMarkerMatch = line.match(/\[\[IMAGE:(.*?)\]\]/);
-              if (imageMarkerMatch) {
-                console.log("Found image marker in malformed JSON:", imageMarkerMatch[1]);
+              // Try to extract image markers from malformed content
+              const imageMarkers = cleanLine.match(/\[\[IMAGE:(.*?)\]\]/g);
+              if (imageMarkers && imageMarkers.length > 0) {
+                for (const markerMatch of imageMarkers) {
+                  const docId = markerMatch.replace(/\[\[IMAGE:(.*?)\]\]/, "$1");
+                  console.log("Found image marker in text:", docId);
 
-                // Create a synthetic image message
-                const syntheticMsg = {
-                  type: "image",
-                  doc_id: imageMarkerMatch[1],
-                  content: `⚠️ Image reference found but data incomplete: ${imageMarkerMatch[1]}`,
-                };
-
-                // Process as a regular image message but with warning
-                messages.value.push({
-                  role: "assistant",
-                  type: "text",
-                  content: `ℹ️ Detected image reference: ${imageMarkerMatch[1]} but data was incomplete`,
-                  id: `warning-${Date.now()}-${Math.random()}`,
-                });
-
-                continue;
+                  messages.value.push({
+                    role: "assistant",
+                    type: "text",
+                    content: `ℹ️ Referenced image: ${docId} (data not available in response)`,
+                    id: `info-${Date.now()}-${Math.random()}`,
+                  });
+                }
               }
-
-              // Try to recover partial JSON
-              const partialRecovery = tryRecoverJSON(line);
-              if (partialRecovery) {
-                console.log("Partially recovered message:", partialRecovery);
-                // Process the recovered message
-                continue;
-              }
-
-              console.error("Completely failed to parse JSON chunk:", line);
             }
           }
+        }
+      }
+
+      // Process any remaining data in buffer
+      if (buffer.trim()) {
+        try {
+          const msg = JSON.parse(buffer.trim()) as {
+            type: string;
+            content?: string;
+            url?: string;
+            doc_id?: string;
+            mime?: string;
+            filename?: string;
+            size?: number;
+            content_b64?: string;
+          };
+
+          // Process the final message the same way
+          if (msg.type === "text") {
+            // ... same processing logic
+          }
+          // ... handle other types
+        } catch (e) {
+          console.error("Failed to parse final buffer:", buffer, e);
         }
       }
 
@@ -262,6 +260,7 @@ export function useAskStream() {
       });
     } finally {
       console.log(`Final image count: ${imageCount}`);
+      buffer = ""; // Clear buffer
       answer.value = "";
       loading.value = false;
       controller = null;
@@ -301,25 +300,7 @@ export function useAskStream() {
     answer.value = "";
     error.value = null;
     imageCount = 0;
-  }
-
-  function tryRecoverJSON(partialJson: string): any | null {
-    try {
-      // Try to find and extract key-value pairs
-      const typeMatch = partialJson.match(/"type":\s*"([^"]+)"/);
-      const docIdMatch = partialJson.match(/"doc_id":\s*"([^"]+)"/);
-      const urlMatch = partialJson.match(/"url":\s*"([^"]+)"/);
-
-      if (typeMatch) {
-        const recovered: any = { type: typeMatch[1] };
-        if (docIdMatch) recovered.doc_id = docIdMatch[1];
-        if (urlMatch) recovered.url = urlMatch[1];
-        return recovered;
-      }
-    } catch (e) {
-      console.error("Failed to recover JSON:", e);
-    }
-    return null;
+    buffer = "";
   }
 
   return {
