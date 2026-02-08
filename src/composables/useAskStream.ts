@@ -13,16 +13,46 @@ interface ChatMessage {
   id?: string;
 }
 
+export interface KnowledgeBase {
+  area_name: string;
+  display_name: string;
+  url: string;
+  description: string;
+}
+
+// Hardcoded knowledge bases - matches backend configuration
+const KNOWLEDGE_BASES: KnowledgeBase[] = [
+  {
+    area_name: "get_unit_info",
+    display_name: "Get Unit Info",
+    url: "http://localhost:8001/getunitinfo/getunitinfo.pdf",
+    description: "Get Unit Info documentation",
+  },
+  {
+    area_name: "save_test_result",
+    display_name: "Save Test Result",
+    url: "http://localhost:8002/savetestresult/savetestresult.pdf",
+    description: "Save Test Result documentation",
+  },
+  {
+    area_name: "error",
+    display_name: "Error",
+    url: "http://localhost:8003/error/error.pdf",
+    description: "Error documentation",
+  },
+];
+
 export function useAskStream() {
   const answer = ref("");
   const messages = ref<ChatMessage[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const selectedKnowledgeBase = ref<string>("get_unit_info"); // Default to first knowledge base
   let controller: AbortController | null = null;
   let imageCount = 0;
   let buffer = ""; // Buffer for incomplete JSON chunks
 
-  async function askStream(question: string, file?: File) {
+  async function askStream(question: string, file?: File, areaName?: string) {
     imageCount = 0;
     buffer = "";
     error.value = null;
@@ -32,6 +62,7 @@ export function useAskStream() {
     try {
       const formData = new FormData();
       formData.append("question", question);
+      formData.append("area_name", areaName || selectedKnowledgeBase.value);
       if (file) formData.append("file", file);
 
       const resp = await fetch(`${API_BASE}/ask_stream`, {
@@ -312,5 +343,7 @@ export function useAskStream() {
     clearMessages,
     loading,
     error,
+    selectedKnowledgeBase,
+    knowledgeBases: KNOWLEDGE_BASES,
   };
 }

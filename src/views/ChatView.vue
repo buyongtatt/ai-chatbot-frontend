@@ -6,7 +6,17 @@ import ThemeToggle from "../components/ThemeToggle.vue";
 import FileUpload from "../components/FileUpload.vue";
 import { useAskStream } from "../composables/useAskStream";
 
-const { answer, messages, askStream, abortStream, downloadFile, loading, error } = useAskStream();
+const {
+  answer,
+  messages,
+  askStream,
+  abortStream,
+  downloadFile,
+  loading,
+  error,
+  selectedKnowledgeBase,
+  knowledgeBases,
+} = useAskStream();
 const question = ref("");
 const attachedFile = ref<File | null>(null);
 
@@ -28,8 +38,8 @@ function submit() {
   }
   messages.value.push({ role: "user", type: "text", content: userMsg });
 
-  // Send to backend only now
-  askStream(question.value.trim(), attachedFile.value || undefined);
+  // Send to backend with selected knowledge base
+  askStream(question.value.trim(), attachedFile.value || undefined, selectedKnowledgeBase.value);
 
   // Reset
   question.value = "";
@@ -120,6 +130,25 @@ function autoResize(e: Event) {
     <!-- Input bar -->
     <div class="border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div class="flex flex-col gap-2 max-w-3xl mx-auto">
+        <!-- Knowledge Base Selector -->
+        <div class="flex items-center gap-2">
+          <label for="kb-select" class="text-sm font-medium text-[var(--color-text)]">
+            Knowledge Base:
+          </label>
+          <select
+            id="kb-select"
+            v-model="selectedKnowledgeBase"
+            :disabled="loading"
+            class="px-3 py-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition-colors"
+          >
+            <option v-for="kb in knowledgeBases" :key="kb.area_name" :value="kb.area_name">
+              {{ kb.display_name }}
+            </option>
+          </select>
+          <span class="text-xs text-[var(--color-muted)] ml-auto">
+            {{ knowledgeBases.find((kb) => kb.area_name === selectedKnowledgeBase)?.description }}
+          </span>
+        </div>
         <!-- Attachment chip(s) on top -->
         <div
           v-if="attachedFile"
